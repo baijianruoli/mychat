@@ -1,0 +1,20 @@
+#server:
+#  ssl:
+#    key-store: classpath:4357663_baijianruoli.cn.pfx
+#    key-store-type: PKCS12
+#    key-store-password: p5fS3Icx
+server:
+  servlet:
+    encoding:
+      force-response: true
+      force-request: true
+spring:
+  rabbitmq:
+    host: 192.168.247.129
+    port: 5672
+    username: liqiqi
+    password: lldj1234567
+    virtual-host: /
+  redis:
+    host: localhost
+    port: 6379
