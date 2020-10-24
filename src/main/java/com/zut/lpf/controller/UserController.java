@@ -8,6 +8,8 @@ import com.zut.lpf.entity.UserEntity;
 import com.zut.lpf.nettys.MyTextWebSocketHandler;
 import com.zut.lpf.response.BaseResponse;
 import com.zut.lpf.response.StatusCode;
+import com.zut.lpf.service.ExecutorChannel;
+import com.zut.lpf.service.RedisService;
 import com.zut.lpf.util.GlobalLock;
 import io.netty.channel.Channel;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
@@ -23,33 +25,32 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
-import static com.zut.lpf.util.GlobalLock.executorService;
 
 @RestController
 public class UserController {
-
     @Autowired
     private UserDao userDao;
-
     @Autowired
     private AmqpAdmin amqpAdmin;
-
     @Autowired
     private RedisTemplate redisTemplate;
-
     @Autowired
     private RabbitTemplate rabbitTemplate;
-
+    @Autowired
+    private RedisService redisService;
+    @Autowired
+    private ExecutorChannel executorChannel;
         //登录
         @RequestMapping("/login")
         public BaseResponse login(@RequestBody  UserEntity userEntity, HttpServletRequest httpServletRequest) throws InterruptedException {
-
             BaseResponse baseResponse = new BaseResponse(StatusCode.Success);
-            QueryWrapper<UserEntity> wrapper = new QueryWrapper<UserEntity>().eq("name", userEntity.getName());
+           QueryWrapper<UserEntity> wrapper = new QueryWrapper<UserEntity>().eq("name", userEntity.getName());
             UserEntity loginEntity = userDao.selectOne(wrapper);
               if(loginEntity==null)
               {
@@ -61,6 +62,7 @@ public class UserController {
               {
                   if(loginEntity.getPassword().equals(userEntity.getPassword()))
                   {
+                      //http等待websocket执行完毕
                       GlobalLock.HttpLock.acquire();
                       if(!redisTemplate.boundHashOps("mycat").hasKey(loginEntity.getName()))
                       {
@@ -72,15 +74,15 @@ public class UserController {
                           amqpAdmin.declareBinding(new Binding(loginEntity.getName(),Binding.DestinationType.QUEUE,"mycat-topic",loginEntity.getName(),null));
                       }
                       //redis查询好友
-                      List<UserEntity> userEntities = redisFindFriendList(userEntity.getName());
+                      List<UserEntity> userEntities = redisService.redisFindFriendList(userEntity.getName());
                       loginEntity.setFriendList(userEntities);
-
                       GlobalLock.humanToChannelId.put(loginEntity.getName(),GlobalLock.remoteId);
                       GlobalLock.flag.put(GlobalLock.remoteId,1);
                       loginEntity.setRemoteId(GlobalLock.remoteId);
                       baseResponse.setData(loginEntity);
                       //创建线程任务
-                      executorSumbit(userEntity.getName());
+                      executorChannel.executorSumbit(userEntity.getName());
+                      //http执行完毕，netty信号量加一
                       GlobalLock.nettyLock.release();
                       return baseResponse;
                   }
@@ -98,20 +100,36 @@ public class UserController {
         public BaseResponse register(@RequestBody  UserEntity userEntity)
         {
             userEntity.setIcon("https://liqiqip.oss-cn-beijing.aliyuncs.com/2020-07/-10/2c661c47-c739-4908-8c4f-53750493aea9_300516998945c70100aebc59ad42dcbf.jpg");
-            System.out.println(userEntity);
-             userDao.insert(userEntity);
+            try{
+                userDao.insert(userEntity);
+            }catch (Exception e)
+            {
+                e.printStackTrace();
+                BaseResponse baseResponse = new BaseResponse(StatusCode.Fail);
+                baseResponse.setData(e.getMessage());
+                return baseResponse;
+            }
+
             return new BaseResponse(StatusCode.Success);
         }
 
         //模糊搜索用户
        @RequestMapping("/searchByName")
-       public BaseResponse  searchByName(String name)
+       public BaseResponse  searchByName(String searchName,String name)
        {
            BaseResponse baseResponse = new BaseResponse(StatusCode.Success);
-           List<UserEntity> list = userDao.selectList(new QueryWrapper<UserEntity>().like("name", name));
-           if(list!=null)
+           List<UserEntity> list = userDao.selectList(new QueryWrapper<UserEntity>().like("name", searchName));
+           List<UserEntity>  friendList= redisService.redisFindFriendList(name);
+           HashMap<String,Integer> hashMap=new HashMap<>();
+           friendList.stream().forEach(res->{
+               hashMap.put(res.getName(),1);
+           });
+           hashMap.put(name,1);
+           List<UserEntity> collect = list.stream().filter(res -> !hashMap.containsKey(res.getName())).collect(Collectors.toList());
+           if(collect!=null)
            {
-               baseResponse.setData(list);
+               baseResponse.setData(collect);
+
                return baseResponse;
            }
            else
@@ -121,40 +139,9 @@ public class UserController {
            }
        }
 
-       public void executorSumbit(String name)
-       {
-           executorService.submit(()->{
 
-               while(true)
-               {
-                   if(!GlobalLock.flag.containsKey(GlobalLock.humanToChannelId.get(name)))
-                       break;
-                   String remoteId = GlobalLock.humanToChannelId.get(name);
-                   Object msg = rabbitTemplate.receiveAndConvert(name);
-                   if(msg!=null)
-                   {
-                       Channel channel = MyTextWebSocketHandler.channelMap.get(remoteId);
-                       channel.writeAndFlush(new TextWebSocketFrame(JSON.toJSONString((MsgEntity)msg)));
-                   }
-//                              Thread.sleep(2000);
-               }
 
-           });
-       }
-       public  List<UserEntity> redisFindFriendList(String name)
-       {
-           List<UserEntity> list=new ArrayList<>();
-           while(redisTemplate.boundListOps(name).size()>0)
-           {
-               Object o = redisTemplate.boundListOps(name).leftPop();
-                   UserEntity userList= (UserEntity) o;
-                   list.add(userList);
-           }
-            list.stream().forEach(res->{
-                redisTemplate.boundListOps(name).rightPush(res);
-            });
 
-           return list;
-       }
+
 
 }

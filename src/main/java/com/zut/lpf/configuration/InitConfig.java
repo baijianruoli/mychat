@@ -38,7 +38,6 @@ public class InitConfig  implements CommandLineRunner {
     @Override
     public void run(String... args) throws Exception {
 
-
         NioEventLoopGroup bossGroup=new NioEventLoopGroup(1);
         NioEventLoopGroup workerGroup=new NioEventLoopGroup();
         try{

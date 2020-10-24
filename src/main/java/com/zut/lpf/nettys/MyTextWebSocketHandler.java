@@ -69,14 +69,11 @@ public class MyTextWebSocketHandler extends SimpleChannelInboundHandler<TextWebS
         //释放http信号量
         GlobalLock.HttpLock.release();
 
-
     }
 
     //使用TextWebSocketFrame传输数据
     @Override
     protected void channelRead0(ChannelHandlerContext channelHandlerContext, TextWebSocketFrame textWebSocketFrame) throws Exception {
-
-
        MsgEntity msgEntity= JSON.parseObject(textWebSocketFrame.text().toString(),MsgEntity.class);
         msgEntity.setTime(simpleDateFormat.format(new Date()));
         log.info("服务器收到消息{}", msgEntity);

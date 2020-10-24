@@ -17,5 +17,5 @@ public class GlobalLock {
     //标记用户登录状态
     public static ConcurrentHashMap<String,Integer> flag=new ConcurrentHashMap<>();
 
-    public static ExecutorService executorService = Executors.newFixedThreadPool(100000);
+
 }
