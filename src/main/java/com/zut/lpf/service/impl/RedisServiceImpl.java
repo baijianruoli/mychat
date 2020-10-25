@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 public class RedisServiceImpl implements RedisService {
@@ -40,9 +41,43 @@ public class RedisServiceImpl implements RedisService {
     }
 
     @Override
-    public void redisAddFriend(String friedName,String name) {
+    public void redisAddFriend(String friendName,String name) {
 
-        UserEntity userEntity = userDao.selectOne(new QueryWrapper<UserEntity>().eq("name", friedName));
+        UserEntity userEntity = userDao.selectOne(new QueryWrapper<UserEntity>().eq("name", friendName));
+        userEntity.setFlag(1);
         redisTemplate.boundListOps(name).rightPush(userEntity);
+    }
+
+    @Override
+    public void redisRemoveFriend(String friendName, String name) {
+        List<UserEntity> list=new ArrayList<>();
+        while(redisTemplate.boundListOps(name).size()>0)
+        {
+            Object o = redisTemplate.boundListOps(name).leftPop();
+            UserEntity userList= (UserEntity) o;
+            list.add(userList);
+        }
+        List<UserEntity> collect = list.stream().filter(res->
+                !res.getName().equals(friendName)
+                ).collect(Collectors.toList());
+       collect.stream().forEach(res->{
+            redisTemplate.boundListOps(name).rightPush(res);
+        });
+    }
+
+    //判断name是否是friendName的好友
+    @Override
+    public boolean hashFrined(String friendName, String name) {
+
+        List<UserEntity> list = redisFindFriendList(friendName);
+        if(list.contains(name))
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+
     }
 }

@@ -33,4 +33,11 @@ public class RedisController {
         baseResponse.setData(list);
         return baseResponse;
     }
+    //删除好友
+    @RequestMapping("/removeFriend")
+    public BaseResponse removeFriend(String name,String friendName)
+    {
+        redisService.redisRemoveFriend(friendName,name);
+        return new BaseResponse(StatusCode.Success);
+    }
 }

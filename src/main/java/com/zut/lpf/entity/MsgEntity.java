@@ -15,5 +15,6 @@ public class MsgEntity implements Serializable {
     private String time;
     private List<UserEntity> friendList;
     private String acceptId;
+    private int friendFlag;
 
 }

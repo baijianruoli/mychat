@@ -3,6 +3,7 @@ package com.zut.lpf.nettys;
 import com.alibaba.fastjson.JSON;
 import com.zut.lpf.controller.UserController;
 import com.zut.lpf.entity.MsgEntity;
+import com.zut.lpf.service.RedisService;
 import com.zut.lpf.util.GlobalLock;
 import com.zut.lpf.util.MychatApplication;
 import io.netty.channel.Channel;
@@ -32,7 +33,11 @@ public class MyTextWebSocketHandler extends SimpleChannelInboundHandler<TextWebS
     @Autowired
     private RabbitTemplate rabbitTemplate;
 
+    @Autowired
+    private RedisService redisService;
+
      public  static  MyTextWebSocketHandler myTextWebSocketHandler;
+
 
      //remoteId  to    channel
     public static ConcurrentHashMap<String, Channel> channelMap = new ConcurrentHashMap<>();
@@ -77,14 +82,20 @@ public class MyTextWebSocketHandler extends SimpleChannelInboundHandler<TextWebS
        MsgEntity msgEntity= JSON.parseObject(textWebSocketFrame.text().toString(),MsgEntity.class);
         msgEntity.setTime(simpleDateFormat.format(new Date()));
         log.info("服务器收到消息{}", msgEntity);
+        msgEntity.setFriendFlag(1);
        if(msgEntity.getAcceptId().equals("all"))
        {
           myTextWebSocketHandler.rabbitTemplate.convertAndSend("mycat-fanout","kkk",msgEntity);
        }
        else
        {
-            myTextWebSocketHandler.rabbitTemplate.convertAndSend("mycat-topic",msgEntity.getAcceptId(),msgEntity);
+
            myTextWebSocketHandler.rabbitTemplate.convertAndSend("mycat-topic",msgEntity.getName(),msgEntity);
+            if(myTextWebSocketHandler.redisService.hashFrined(msgEntity.getAcceptId(),msgEntity.getName()))
+                msgEntity.setFriendFlag(1);
+            else
+                msgEntity.setFriendFlag(0);
+           myTextWebSocketHandler.rabbitTemplate.convertAndSend("mycat-topic",msgEntity.getAcceptId(),msgEntity);
        }
 
     }
@@ -96,17 +107,5 @@ public class MyTextWebSocketHandler extends SimpleChannelInboundHandler<TextWebS
        ctx.close();
     }
 
-/*    @Override
-    protected void channelRead0(ChannelHandlerContext channelHandlerContext, Object o) throws Exception {
-        System.out.println((MsgEntity)JSON.parse(o.toString().getBytes()));
-        if(o instanceof MsgEntity)
-        {
-            log.info("服务器收到消息{}",(MsgEntity)o);
-        }
 
-        channelGroup.forEach(res->{
-            System.out.println(res.remoteAddress());
-            res.writeAndFlush(new TextWebSocketFrame(simpleDateFormat.format(new Date())+"    "+res.remoteAddress()+"发送了信息: "+(MsgEntity)o));
-        });
-    }*/
 }

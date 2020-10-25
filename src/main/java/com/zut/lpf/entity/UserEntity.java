@@ -23,5 +23,7 @@ public class UserEntity implements Serializable {
     private String remoteId;
     @TableField(exist = false)
     private List<UserEntity> friendList;
+    @TableField(exist = false)
+    private int flag;
 
 }
