@@ -28,6 +28,7 @@ public class RedisController {
     @RequestMapping("/getFriendList")
     public BaseResponse addFriend( String name)
     {
+
         List<UserEntity> list = redisService.redisFindFriendList(name);
         BaseResponse baseResponse = new BaseResponse(StatusCode.Success);
         baseResponse.setData(list);

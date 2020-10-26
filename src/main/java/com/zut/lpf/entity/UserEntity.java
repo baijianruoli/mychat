@@ -24,6 +24,6 @@ public class UserEntity implements Serializable {
     @TableField(exist = false)
     private List<UserEntity> friendList;
     @TableField(exist = false)
-    private int flag;
+    private int friendFlag;
 
 }

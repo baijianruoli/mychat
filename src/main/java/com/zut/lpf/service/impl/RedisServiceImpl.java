@@ -44,7 +44,7 @@ public class RedisServiceImpl implements RedisService {
     public void redisAddFriend(String friendName,String name) {
 
         UserEntity userEntity = userDao.selectOne(new QueryWrapper<UserEntity>().eq("name", friendName));
-        userEntity.setFlag(1);
+        userEntity.setFriendFlag(1);
         redisTemplate.boundListOps(name).rightPush(userEntity);
     }
 
