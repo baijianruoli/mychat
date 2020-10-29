@@ -58,6 +58,7 @@ public class MyTextWebSocketHandler extends SimpleChannelInboundHandler<TextWebS
     @Override
     public void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
         GlobalLock.flag.remove(ctx.channel().id().toString());
+
         System.out.println("remove被调用"+ctx.channel().id());
     }
 
@@ -67,7 +68,7 @@ public class MyTextWebSocketHandler extends SimpleChannelInboundHandler<TextWebS
         //netty占用信号量
         GlobalLock.nettyLock.acquire();
         Channel channel = ctx.channel();
-        log.info("{}加入聊天",channel.id().toString());
+        log.info("{}加入聊天",channel.remoteAddress());
         channelGroup.add(channel);
         channelMap.put(channel.id().toString(),channel);
         GlobalLock.remoteId=channel.id().toString();

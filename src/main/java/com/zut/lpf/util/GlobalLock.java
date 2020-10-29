@@ -14,7 +14,7 @@ public class GlobalLock {
     //name转化channelID
     public static ConcurrentHashMap<String,String>  humanToChannelId=new ConcurrentHashMap<>();
 
-    //标记用户登录状态
+    //标记用户登录状态 channelId
     public static ConcurrentHashMap<String,Integer> flag=new ConcurrentHashMap<>();
 
 

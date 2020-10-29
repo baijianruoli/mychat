@@ -139,9 +139,26 @@ public class UserController {
            }
        }
 
+       @RequestMapping("/update")
+        public BaseResponse update(@RequestBody UserEntity userEntity)
+       {
+           userDao.updateById(userEntity);
+           return new BaseResponse(StatusCode.Success);
+       }
 
-
-
-
+       @RequestMapping("/manOnline")
+        public BaseResponse manOline(String name)
+       {
+           BaseResponse baseResponse = new BaseResponse(StatusCode.Success);
+           if( GlobalLock.humanToChannelId.containsKey(name)&&GlobalLock.flag.containsKey(GlobalLock.humanToChannelId.get(name)))
+           {
+               baseResponse.setData(1);
+           }
+           else
+           {
+               baseResponse.setData(0);
+           }
+           return  baseResponse;
+       }
 
 }

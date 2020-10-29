@@ -22,6 +22,11 @@ public class ExecutorChannelImpl implements ExecutorChannel {
     private RabbitTemplate rabbitTemplate;
     @Override
     public void executorSumbit(String name) {
+//        try {
+//            Thread.sleep(2000);
+//        } catch (InterruptedException e) {
+//            e.printStackTrace();
+//        }
         executorService.submit(()->{
 
             while(true)
@@ -33,6 +38,8 @@ public class ExecutorChannelImpl implements ExecutorChannel {
                 if(msg!=null)
                 {
                     Channel channel = MyTextWebSocketHandler.channelMap.get(remoteId);
+                    System.out.println(channel.remoteAddress());
+                    System.out.println(msg);
                     channel.writeAndFlush(new TextWebSocketFrame(JSON.toJSONString((MsgEntity)msg)));
                 }
 //                              Thread.sleep(2000);
