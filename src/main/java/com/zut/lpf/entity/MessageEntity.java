@@ -5,13 +5,12 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
-import java.io.Serializable;
+import java.util.Date;
 import java.util.List;
 
 @Data
 @TableName("message")
-public class MsgEntity implements Serializable {
-
+public class MessageEntity {
     @TableId
     private String id;
     private int userId;
@@ -21,12 +20,7 @@ public class MsgEntity implements Serializable {
     @TableField("user_name")
     private String name;
     @TableField("create_time")
-    private String time;
-    @TableField(exist = false)
-    private List<UserEntity> friendList;
+    private Date time;
     @TableField("accept_name")
     private String acceptId;
-    @TableField(exist = false)
-    private int friendFlag;
-
 }

@@ -9,12 +9,19 @@ server:
       force-response: true
       force-request: true
 spring:
+  cache:
+    type: redis
+  jackson:
+    date-format: MM-dd HH:mm
+    time-zone: Hongkong
   rabbitmq:
-    host: 192.168.247.129
+    host: 123.56.129.67
     port: 5672
     username: liqiqi
     password: lldj1234567
     virtual-host: /
   redis:
-    host: localhost
+    host: 123.56.129.67
     port: 6379
+
+

@@ -1,38 +1,39 @@
 package com.zut.lpf.controller;
 
-import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.zut.lpf.dao.UserDao;
-import com.zut.lpf.entity.MsgEntity;
 import com.zut.lpf.entity.UserEntity;
-import com.zut.lpf.nettys.MyTextWebSocketHandler;
 import com.zut.lpf.response.BaseResponse;
 import com.zut.lpf.response.StatusCode;
 import com.zut.lpf.service.ExecutorChannel;
 import com.zut.lpf.service.RedisService;
+import com.zut.lpf.service.UserService;
+import com.zut.lpf.util.GlobalCode;
 import com.zut.lpf.util.GlobalLock;
-import io.netty.channel.Channel;
-import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
+import com.zut.lpf.vo.UserVo;
+import io.swagger.annotations.Api;
+import io.swagger.annotations.ApiImplicitParam;
+import io.swagger.annotations.ApiOperation;
+import io.swagger.annotations.ApiParam;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.*;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.BoundListOperations;
-import org.springframework.data.redis.core.ListOperations;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.util.DigestUtils;
+import org.springframework.web.bind.annotation.*;
 
-import javax.servlet.http.HttpServletRequest;
-import java.util.ArrayList;
+import javax.annotation.PostConstruct;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 
+@Api("基础服务")
 @RestController
+@Slf4j
 public class UserController {
     @Autowired
     private UserDao userDao;
@@ -41,124 +42,132 @@ public class UserController {
     @Autowired
     private RedisTemplate redisTemplate;
     @Autowired
-    private RabbitTemplate rabbitTemplate;
-    @Autowired
     private RedisService redisService;
     @Autowired
     private ExecutorChannel executorChannel;
-        //登录
-        @RequestMapping("/login")
-        public BaseResponse login(@RequestBody  UserEntity userEntity, HttpServletRequest httpServletRequest) throws InterruptedException {
-            BaseResponse baseResponse = new BaseResponse(StatusCode.Success);
-           QueryWrapper<UserEntity> wrapper = new QueryWrapper<UserEntity>().eq("name", userEntity.getName());
-            UserEntity loginEntity = userDao.selectOne(wrapper);
-              if(loginEntity==null)
-              {
-                  baseResponse.setMsg("账号不存在");
-                  baseResponse.setCode(1);
-                  return baseResponse;
-              }
-              else
-              {
-                  if(loginEntity.getPassword().equals(userEntity.getPassword()))
-                  {
-                      //http等待websocket执行完毕
-                      GlobalLock.HttpLock.acquire();
-                      if(!redisTemplate.boundHashOps("mycat").hasKey(loginEntity.getName()))
-                      {
-                          redisTemplate.boundHashOps("mycat").put(loginEntity.getName(),1);
-                          amqpAdmin.declareQueue(new Queue(loginEntity.getName()));
-                          amqpAdmin.declareExchange(new TopicExchange("mycat-topic"));
-                          amqpAdmin.declareExchange(new FanoutExchange("mycat-fanout"));
-                          amqpAdmin.declareBinding(new Binding(loginEntity.getName(),Binding.DestinationType.QUEUE,"mycat-fanout","kkk",null));
-                          amqpAdmin.declareBinding(new Binding(loginEntity.getName(),Binding.DestinationType.QUEUE,"mycat-topic",loginEntity.getName(),null));
-                      }
-                      //redis查询好友
-                      List<UserEntity> userEntities = redisService.redisFindFriendList(userEntity.getName());
-                      loginEntity.setFriendList(userEntities);
-                      GlobalLock.humanToChannelId.put(loginEntity.getName(),GlobalLock.remoteId);
-                      GlobalLock.flag.put(GlobalLock.remoteId,1);
-                      loginEntity.setRemoteId(GlobalLock.remoteId);
-                      baseResponse.setData(loginEntity);
-                      //创建线程任务
-                      executorChannel.executorSumbit(userEntity.getName());
-                      //http执行完毕，netty信号量加一
-                      GlobalLock.nettyLock.release();
-                      return baseResponse;
-                  }
-                  else
-                  {
-                      baseResponse.setMsg("密码不正确");
-                      baseResponse.setCode(1);
-                      return baseResponse;
-                  }
-              }
+    @Autowired
+    private UserService userService;
 
-        }
-        //注册
-        @RequestMapping("/register")
-        public BaseResponse register(@RequestBody  UserEntity userEntity)
-        {
-            userEntity.setIcon("https://liqiqip.oss-cn-beijing.aliyuncs.com/2020-07/-10/2c661c47-c739-4908-8c4f-53750493aea9_300516998945c70100aebc59ad42dcbf.jpg");
-            try{
-                userDao.insert(userEntity);
-            }catch (Exception e)
-            {
-                e.printStackTrace();
-                BaseResponse baseResponse = new BaseResponse(StatusCode.Fail);
-                baseResponse.setData(e.getMessage());
+    //登录
+    @ApiOperation("登录接口")
+    @PostMapping("/login")
+    public BaseResponse login(@RequestBody @ApiParam("用户信息") UserEntity userEntity) throws InterruptedException {
+        BaseResponse baseResponse = new BaseResponse(StatusCode.Success);
+        QueryWrapper<UserEntity> wrapper = new QueryWrapper<UserEntity>().eq("name", userEntity.getName());
+        UserEntity loginEntity = userDao.selectOne(wrapper);
+        if (loginEntity == null) {
+            baseResponse.setMsg("账号不存在");
+            baseResponse.setCode(GlobalCode.CODE_OK);
+            return baseResponse;
+
+        } else {
+            if (DigestUtils.md5DigestAsHex(userEntity.getPassword().getBytes()).equals(loginEntity.getPassword())) {
+                //http等待websocket执行完毕
+                GlobalLock.HttpLock.acquire();
+                //创建消息队列
+                redisService.createQueue(loginEntity.getName());
+                //redis查询好友
+                List<UserEntity> userEntities = redisService.redisFindFriendList(userEntity.getName());
+                loginEntity.setFriendList(userEntities);
+                GlobalLock.humanToChannelId.put(loginEntity.getName(), GlobalLock.remoteId);
+
+                GlobalLock.flag.put(GlobalLock.remoteId, GlobalCode.CODE_OK);
+
+                loginEntity.setRemoteId(GlobalLock.remoteId);
+                //更新最后访问时间
+                userService.updateVisitTime(loginEntity);
+                //加入Redis的Uv记录
+                redisService.UvLoad(loginEntity.getId());
+                //获取历史信息
+                UserVo userVo = userService.getOthers(loginEntity);
+                baseResponse.setData(userVo);
+                //创建线程任务
+                executorChannel.executorSumbit(userEntity.getName());
+                //http执行完毕，netty信号量加一
+                GlobalLock.nettyLock.release();
+                return baseResponse;
+            } else {
+                baseResponse.setMsg("密码不正确");
+                baseResponse.setCode(GlobalCode.CODE_OK);
                 return baseResponse;
             }
-
-            return new BaseResponse(StatusCode.Success);
         }
 
-        //模糊搜索用户
-       @RequestMapping("/searchByName")
-       public BaseResponse  searchByName(String searchName,String name)
-       {
-           BaseResponse baseResponse = new BaseResponse(StatusCode.Success);
-           List<UserEntity> list = userDao.selectList(new QueryWrapper<UserEntity>().like("name", searchName));
-           List<UserEntity>  friendList= redisService.redisFindFriendList(name);
-           HashMap<String,Integer> hashMap=new HashMap<>();
-           friendList.stream().forEach(res->{
-               hashMap.put(res.getName(),1);
-           });
-           hashMap.put(name,1);
-           List<UserEntity> collect = list.stream().filter(res -> !hashMap.containsKey(res.getName())).collect(Collectors.toList());
-           if(collect!=null)
-           {
-               baseResponse.setData(collect);
+    }
 
-               return baseResponse;
-           }
-           else
-           {
-               baseResponse.setMsg("无数据");
-               return  baseResponse;
-           }
-       }
+    //注册
+    @ApiOperation("注册接口")
+    @PostMapping("/register")
+    @CacheEvict(value = "MychatUser", allEntries=true)
+    public BaseResponse register(@RequestBody UserEntity userEntity) {
+        userEntity.setIcon("https://www.mzyyun.com/api/img.php");
+        userEntity.setCreateTime(new Date());
+        userEntity.setLastVisit(new Date());
+        String s = DigestUtils.md5DigestAsHex(userEntity.getPassword().getBytes());
+        userEntity.setPassword(s);
+        try {
+            userDao.insert(userEntity);
+        } catch (Exception e) {
+            e.printStackTrace();
+            BaseResponse baseResponse = new BaseResponse(StatusCode.Fail);
+            baseResponse.setData(e.getMessage());
+            return baseResponse;
+        }
+        return new BaseResponse(StatusCode.Success);
+    }
 
-       @RequestMapping("/update")
-        public BaseResponse update(@RequestBody UserEntity userEntity)
-       {
-           userDao.updateById(userEntity);
-           return new BaseResponse(StatusCode.Success);
-       }
+    //模糊搜索用户
+    @ApiOperation("模糊搜索用户")
+    @GetMapping("/searchByName")
+    @Cacheable(value = "MychatUser")
+    public BaseResponse searchByName(String searchName, String name) {
+        BaseResponse baseResponse = new BaseResponse(StatusCode.Success);
+        List<UserEntity> list = userDao.selectList(new QueryWrapper<UserEntity>().like("name", searchName));
+        List<UserEntity> friendList = redisService.redisFindFriendList(name);
+        HashMap<String, Integer> hashMap = new HashMap<>();
+        friendList.stream().forEach(res -> {
+            hashMap.put(res.getName(), GlobalCode.CODE_OK);
+        });
+        hashMap.put(name, GlobalCode.CODE_OK);
+        List<UserEntity> collect = list.stream().filter(res -> !hashMap.containsKey(res.getName())).collect(Collectors.toList());
+        if (collect != null) {
+            baseResponse.setData(collect);
+            return baseResponse;
+        } else {
+            baseResponse.setMsg("无数据");
+            return baseResponse;
+        }
+    }
 
-       @RequestMapping("/manOnline")
-        public BaseResponse manOline(String name)
-       {
-           BaseResponse baseResponse = new BaseResponse(StatusCode.Success);
-           if( GlobalLock.humanToChannelId.containsKey(name)&&GlobalLock.flag.containsKey(GlobalLock.humanToChannelId.get(name)))
-           {
-               baseResponse.setData(1);
-           }
-           else
-           {
-               baseResponse.setData(0);
-           }
-           return  baseResponse;
-       }
+    //更新
+    @ApiOperation("更新用户信息")
+    @PostMapping("/update")
+    public BaseResponse update(@RequestBody UserEntity userEntity) {
+        userDao.updateById(userEntity);
+        return new BaseResponse(StatusCode.Success);
+    }
+
+    //是否在线
+    @ApiOperation("是否在线")
+    @ApiImplicitParam(name = "name", paramType = "query")
+    @GetMapping("/manOnline")
+    public BaseResponse manOline(@ApiParam(value = "本人用户名") String name) {
+        BaseResponse baseResponse = new BaseResponse(StatusCode.Success);
+        if (GlobalLock.humanToChannelId.containsKey(name) && GlobalLock.flag.containsKey(GlobalLock.humanToChannelId.get(name))) {
+            baseResponse.setData(GlobalCode.CODE_OK);
+        } else {
+            baseResponse.setData(GlobalCode.CODE_FAIL);
+        }
+        return baseResponse;
+    }
+
+    @ApiOperation("退出系统")
+    @GetMapping("/logout")
+    public BaseResponse logout(@ApiParam("本人用户名") String name) {
+        String s = GlobalLock.humanToChannelId.get(name);
+        GlobalLock.flag.remove(s);
+        log.info("{}退出", name);
+        return new BaseResponse(StatusCode.Success);
+    }
 
 }
